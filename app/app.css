@@ -1,152 +1,217 @@
-@import url("https://fonts.googleapis.com/css2?family=Mona+Sans:ital,wght@0,200..900;1,200..900&display=swap");
-@import "tailwindcss";
-@import "tw-animate-css";
-
-@theme {
-  --font-sans: "Mona Sans", ui-sans-serif, system-ui, sans-serif,
-  "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --color-dark-200: #475467;
-  --color-light-blue-100: #c1d3f81a;
-  --color-light-blue-200: #a7bff14d;
-
-  --color-badge-green: #d5faf1;
-  --color-badge-red: #f9e3e2;
-  --color-badge-yellow: #fceed8;
-
-  --color-badge-green-text: #254d4a;
-  --color-badge-red-text: #752522;
-  --color-badge-yellow-text: #73321b;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-html,
 body {
-  @apply bg-white;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(
+          135deg,
+          #ffe5ec,
+          #f3ebff,
+          #eef2ff
+  );
+  min-height: 100vh;
 }
 
-main {
-  @apply min-h-screen pt-10;
-}
-h1 {
-  @apply max-sm:text-[3rem] text-6xl  text-gradient leading-tight xl:tracking-[-2px] font-semibold;
-}
-
-h2 {
-  @apply max-sm:text-xl text-3xl text-dark-200;
+.main-section {
+  max-width: 1200px;
+  margin: auto;
+  padding: 50px 20px;
 }
 
-label {
-  @apply text-dark-200;
-}
-input {
-  @apply w-full p-4 inset-shadow rounded-2xl focus:outline-none bg-white;
+.page-heading {
+  text-align: center;
+  margin-bottom: 40px;
 }
 
-textarea {
-  @apply w-full p-4 inset-shadow rounded-2xl focus:outline-none bg-white;
+.page-heading h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #222;
 }
 
-form {
-  @apply flex flex-col items-start gap-8 w-full;
+.page-heading p {
+  margin-top: 12px;
+  color: #666;
+  font-size: 1rem;
 }
 
-@layer components {
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-[#AB8C95] via-[#000000] to-[#8E97C5];
-  }
-  .gradient-border {
-    @apply bg-gradient-to-b from-light-blue-100 to-light-blue-200 p-4 rounded-2xl;
-  }
-  .primary-button {
-    @apply primary-gradient text-white rounded-full px-4 py-2 cursor-pointer w-full;
-  }
-  .resume-nav {
-    @apply flex flex-row justify-between items-center p-4 border-b border-gray-200;
-  }
-  .resume-summary {
-    @apply flex flex-row items-center justify-center p-4 gap-4;
-    .category {
-      @apply flex flex-row gap-2 items-center bg-gray-50 rounded-2xl p-4 w-full justify-between;
-    }
-  }
-  .back-button {
-    @apply flex flex-row items-center gap-2 border border-gray-200 rounded-lg p-2 shadow-sm;
-  }
-  .auth-button {
-    @apply primary-gradient rounded-full py-4 px-8 cursor-pointer w-[600px] max-md:w-full text-3xl font-semibold text-white;
-  }
-  .main-section {
-    @apply flex flex-col items-center gap-8 pt-12 max-sm:mx-2 mx-15 pb-5;
-  }
-  .page-heading {
-    @apply flex flex-col items-center gap-8 max-w-4xl text-center max-sm:gap-4;
-  }
-  .resumes-section {
-    @apply flex flex-wrap max-md:flex-col max-md:gap-4 gap-6 items-start max-md:items-center w-full max-w-[1850px] justify-evenly;
-  }
-
-  .resume-card {
-    @apply flex flex-col gap-8 h-[560px] w-[350px] lg:w-[430px] xl:w-[490px] bg-white rounded-2xl p-4;
-  }
-
-  .resume-card-header {
-    @apply flex flex-row gap-2 justify-between min-h-[110px] max-sm:flex-col items-center max-md:justify-center max-md:items-center;
-  }
-
-  .feedback-section {
-    @apply flex flex-col gap-8 w-1/2 px-8 max-lg:w-full py-6;
-  }
-
-  .navbar {
-    @apply flex flex-row justify-between items-center bg-white rounded-full p-4 w-full px-10 max-w-[1200px] mx-auto;
-  }
-
-  .score-badge {
-    @apply flex flex-row items-center justify-center py-1 px-2 gap-4 rounded-[96px];
-  }
-
-  .form-div {
-    @apply flex flex-col gap-2 w-full items-start;
-  }
-
-  .uplader-drag-area {
-    @apply relative p-8 text-center transition-all duration-700 cursor-pointer bg-white rounded-2xl min-h-[208px];
-  }
-  .uploader-selected-file {
-    @apply flex items-center justify-between p-3 bg-gray-50 rounded-2xl;
-  }
+.search-box {
+  width: 500px;
+  max-width: 100%;
+  margin-top: 25px;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  font-size: 15px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 
-@utility bg-gradient {
-  background: linear-gradient(to bottom, #f0f4ff 60%, #fa7185cc);
+.resume-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 25px;
 }
 
-@utility text-gradient {
-  @apply bg-clip-text text-transparent bg-gradient-to-r from-[#AB8C95] via-[#000000] to-[#8E97C5];
+.resume-card {
+  background: white;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  transition: 0.3s;
 }
 
-@utility gradient-hover {
-  @apply bg-gradient-to-b from-light-blue-100 to-light-blue-200;
+.resume-card:hover {
+  transform: translateY(-5px);
 }
 
-@utility primary-gradient {
-  background: linear-gradient(to bottom, #8e98ff, #606beb);
-  box-shadow: 0px 74px 21px 0px #6678ef00;
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-@utility primary-gradient-hover {
-  background: linear-gradient(to bottom, #717dff, #4957eb);
+.card-header h3 {
+  font-size: 18px;
+  color: #222;
 }
 
-@utility inset-shadow {
-  box-shadow: inset 0 0 12px 0 rgba(36, 99, 235, 0.2);
-  backdrop-filter: blur(10px);
+.score {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 13px;
+  background: conic-gradient(#a855f7, #ec4899, #a855f7);
+  -webkit-background-clip: text; /* won't work on border */
+  /* Use this approach instead: */
+  border: 4px solid transparent;
+  background: linear-gradient(white, white) padding-box,
+  linear-gradient(to right, #a855f7, #ec4899) border-box;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.resume-card p {
+  color: #777;
+  margin: 8px 0 15px;
+}
+
+.resume-card img {
+  width: 100%;
+  height: 250px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  width: 100%;
+}
+
+.primary-button {
+  background: linear-gradient(to right, #a855f7, #ec4899);
+  color: white;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+
+.resumind-logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(to right, #6c63ff, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+a {
+  text-decoration: none;
+}
+
+
+
+.gradient-border {
+  padding: 3px;
+  background: linear-gradient(to right, #a855f7, #ec4899);
+  border-radius: 1.5rem;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: url("/images/bg-auth.svg");
+  background-size: cover;
+  background-position: center;
+}
+
+.gradient-border {
+  padding: 2px;
+  border-radius: 28px;
+  background: linear-gradient(to right, #7c5cff, #ec4899);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 26px;
+  padding: 40px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.auth-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.auth-content h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #222;
+}
+
+.auth-content h2 {
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #666;
+  line-height: 1.4;
+}
+
+.auth-button {
+  width: 100%;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 9999px;
+  padding: 16px 20px;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  background: linear-gradient(to right, #6d5dfc, #ec4899);
+  box-shadow: 0 8px 20px rgba(124, 92, 255, 0.25);
+}
+
+.auth-button p {
+  margin: 0;
+  color: white;
 }
