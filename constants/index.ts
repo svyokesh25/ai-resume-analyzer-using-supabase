@@ -1,6 +1,3 @@
-
-
-
 export const resumes: Resume[] = [
     {
         id: "1",
