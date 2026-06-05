@@ -1,11 +1,9 @@
 import React from "react";
 import Navbar from "~/components/Navbar";
 import FileUploader from "~/components/FileUploader";
-import { convertPdfToImage } from "~/lib/pdf2img";
 import { useNavigate } from "react-router";
 import { generateUUID } from "~/lib/utils";
-import { usePuterStore } from "~/lib/puter";
-import { prepareInstructions } from "../../constants";
+import { supabase } from "~/lib/supabase";
 
 interface AnalyzeParams {
     companyName: string;
@@ -20,45 +18,7 @@ type StatusState =
     | { type: "error"; message: string }
     | { type: "success"; message: string };
 
-async function toImageFile(
-    file: File
-): Promise<{ imageFile: File; imageUrl: string } | { error: string }> {
-    const name = file.name.toLowerCase();
-    const mime = file.type.toLowerCase();
-
-    if (mime.startsWith("image/")) {
-        return { imageFile: file, imageUrl: URL.createObjectURL(file) };
-    }
-
-    if (name.endsWith(".pdf") || mime === "application/pdf") {
-        let result;
-        try {
-            result = await convertPdfToImage(file);
-        } catch {
-            return { error: "Couldn't convert PDF — please try again." };
-        }
-
-        if (result.error || !result.file) {
-            return {
-                error: result.error
-                    ? `Couldn't convert PDF: ${result.error}`
-                    : "Couldn't convert PDF — please try again.",
-            };
-        }
-
-        return { imageFile: result.file, imageUrl: result.imageUrl };
-    }
-
-    return {
-        error: `Unsupported file type "${
-            file.name.split(".").pop()?.toUpperCase() ?? "unknown"
-        }". Please upload a PDF or image.`,
-    };
-}
-
 const Upload = (): React.JSX.Element => {
-    const aiFeedback = usePuterStore((state) => state.ai.feedback);
-
     const [file, setFile] = React.useState<File | null>(null);
     const navigate = useNavigate();
     const [companyName, setCompanyName] = React.useState("");
@@ -78,7 +38,13 @@ const Upload = (): React.JSX.Element => {
     const handleClearStorage = async (): Promise<void> => {
         try {
             setStatus({ type: "loading", message: "Clearing app storage..." });
-            await window.puter.kv.flush();
+
+            Object.keys(localStorage).forEach((key) => {
+                if (key.startsWith("resume:")) {
+                    localStorage.removeItem(key);
+                }
+            });
+
             setFile(null);
             setStatus({
                 type: "success",
@@ -109,132 +75,65 @@ const Upload = (): React.JSX.Element => {
         }
 
         try {
-            setStatus({ type: "loading", message: "Converting resume…" });
-
-            const conversion = await toImageFile(file);
-            if ("error" in conversion) {
-                setStatus({ type: "error", message: conversion.error });
-                setIsProcessing(false);
-                return;
-            }
-
             setStatus({ type: "loading", message: "Uploading resume…" });
 
-            const uploadedFileResult = await window.puter.fs.upload([file]);
-            const uploadedFile = Array.isArray(uploadedFileResult)
-                ? uploadedFileResult[0]
-                : uploadedFileResult;
+            const uuid = generateUUID();
+            const fileExt = file.name.split(".").pop() || "pdf";
+            const fileName = `${uuid}.${fileExt}`;
+            const filePath = `uploads/${fileName}`;
 
-            if (!uploadedFile?.path) {
+            const { error: uploadError } = await supabase.storage
+                .from("resumes")
+                .upload(filePath, file, {
+                    cacheControl: "3600",
+                    upsert: false,
+                });
+
+            if (uploadError) {
                 setStatus({
                     type: "error",
-                    message: "Failed to upload resume — please try again.",
+                    message: uploadError.message || "Failed to upload resume.",
                 });
                 setIsProcessing(false);
                 return;
             }
 
-            setStatusText("Preparing data...");
+            const { data: publicUrlData } = supabase.storage
+                .from("resumes")
+                .getPublicUrl(filePath);
 
-            const uuid = generateUUID();
-            const data: {
-                id: string;
-                resumePath: string;
-                imagePath: string | null;
-                companyName: string;
-                jobTitle: string;
-                jobDescription: string;
-                feedback: any;
-            } = {
+            const data = {
                 id: uuid,
-                resumePath: uploadedFile.path,
+                resumePath: filePath,
+                resumeUrl: publicUrlData.publicUrl,
                 imagePath: null,
+                imageUrl: null,
                 companyName,
                 jobTitle,
                 jobDescription,
                 feedback: null,
             };
 
-            await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
+            localStorage.setItem(`resume:${uuid}`, JSON.stringify(data));
 
-            setStatus({ type: "loading", message: "Analyzing resume…" });
-            setStatusText("Analyzing...");
-
-            try {
-                const feedback = await aiFeedback(
-                    uploadedFile.path,
-                    prepareInstructions({
-                        jobTitle,
-                        jobDescription,
-                        AIResponseFormat: "json",
-                    })
-                );
-
-                if (feedback) {
-                    const content = feedback.message.content;
-
-                    const feedbackText =
-                        typeof content === "string"
-                            ? content
-                            : content[0]?.type === "text"
-                                ? content[0].text
-                                : "";
-
-                    let parsedFeedback: any;
-
-                    try {
-                        parsedFeedback = JSON.parse(feedbackText);
-                    } catch (error) {
-                        console.error("JSON parse error:", error);
-                        parsedFeedback = {
-                            raw: feedbackText.slice(0, 5000),
-                        };
-                    }
-
-                    const stringifiedFeedback = JSON.stringify(parsedFeedback);
-
-                    data.feedback =
-                        stringifiedFeedback.length > 200000
-                            ? {
-                                raw: stringifiedFeedback.slice(0, 200000),
-                            }
-                            : parsedFeedback;
-
-                    await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-                    setStatus({
-                        type: "success",
-                        message: "Analysis completed successfully.",
-                    });
-                    setStatusText("Analysis completed successfully, redirecting...");
-                } else {
-                    setStatus({
-                        type: "success",
-                        message: "Resume uploaded. AI feedback unavailable right now.",
-                    });
-                    setStatusText("Redirecting to resume page...");
-                }
-            } catch (aiError: any) {
-                console.error("AI feedback error:", aiError);
-
-                setStatus({
-                    type: "success",
-                    message: "Resume uploaded. AI usage limit reached, opening resume page.",
-                });
-                setStatusText("Redirecting to resume page...");
-            }
+            setStatus({
+                type: "success",
+                message: "Resume uploaded successfully.",
+            });
+            setStatusText("Redirecting...");
 
             navigate(`/resume/${uuid}`);
         } catch (error: any) {
             console.error("Analyze error:", error);
             setStatus({
                 type: "error",
-                message: error?.message || "Storage limit reached",
+                message: error?.message || "Something went wrong.",
             });
         } finally {
             setIsProcessing(false);
         }
     };
+
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
         e.preventDefault();
 
