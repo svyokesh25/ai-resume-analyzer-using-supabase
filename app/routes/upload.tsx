@@ -70,8 +70,26 @@ const Upload = (): React.JSX.Element => {
 
     const handleFileSelect = (selectedFile: File | null): void => {
         setFile(selectedFile);
-        if (status.type === "error") {
+        if (status.type === "error" || status.type === "success") {
             setStatus({ type: "idle" });
+        }
+    };
+
+    const handleClearStorage = async (): Promise<void> => {
+        try {
+            setStatus({ type: "loading", message: "Clearing app storage..." });
+            await window.puter.kv.flush();
+            setFile(null);
+            setStatus({
+                type: "success",
+                message: "App data cleared successfully.",
+            });
+        } catch (error: any) {
+            console.error("Clear storage error:", error);
+            setStatus({
+                type: "error",
+                message: error?.message || "Failed to clear app storage.",
+            });
         }
     };
 
@@ -90,146 +108,133 @@ const Upload = (): React.JSX.Element => {
             return;
         }
 
-        console.log({
-            companyName,
-            jobTitle,
-            jobDescription,
-            file,
-        });
-
-        setStatus({ type: "loading", message: "Converting resume…" });
-
-        const conversion = await toImageFile(file);
-        if ("error" in conversion) {
-            setStatus({ type: "error", message: conversion.error });
-            setIsProcessing(false);
-            return;
-        }
-
-        const { imageFile, imageUrl } = conversion;
-
-        setStatus({ type: "loading", message: "Uploading resume…" });
-
-        let uploadedFile: any;
         try {
+            setStatus({ type: "loading", message: "Converting resume…" });
+
+            const conversion = await toImageFile(file);
+            if ("error" in conversion) {
+                setStatus({ type: "error", message: conversion.error });
+                setIsProcessing(false);
+                return;
+            }
+
+            setStatus({ type: "loading", message: "Uploading resume…" });
+
             const uploadedFileResult = await window.puter.fs.upload([file]);
-            uploadedFile = Array.isArray(uploadedFileResult)
+            const uploadedFile = Array.isArray(uploadedFileResult)
                 ? uploadedFileResult[0]
                 : uploadedFileResult;
-        } catch {
-            setStatus({
-                type: "error",
-                message: "Failed to upload resume — please try again.",
-            });
-            setIsProcessing(false);
-            return;
-        }
 
-        if (!uploadedFile) {
-            setStatus({
-                type: "error",
-                message: "Failed to upload resume — please try again.",
-            });
-            setIsProcessing(false);
-            return;
-        }
+            if (!uploadedFile?.path) {
+                setStatus({
+                    type: "error",
+                    message: "Failed to upload resume — please try again.",
+                });
+                setIsProcessing(false);
+                return;
+            }
 
-        let uploadedImage: any;
-        try {
-            const uploadedImageResult = await window.puter.fs.upload([imageFile]);
-            uploadedImage = Array.isArray(uploadedImageResult)
-                ? uploadedImageResult[0]
-                : uploadedImageResult;
-        } catch {
-            setStatus({
-                type: "error",
-                message: "Failed to upload image — please try again.",
-            });
-            setIsProcessing(false);
-            return;
-        }
+            setStatusText("Preparing data...");
 
-        if (!uploadedImage) {
-            setStatus({
-                type: "error",
-                message: "Failed to upload image — please try again.",
-            });
-            setIsProcessing(false);
-            return;
-        }
-
-        setStatusText("Preparing data...");
-
-        const savedResumeData = {
-            companyName,
-            jobTitle,
-            jobDescription,
-            file,
-            imageUrl,
-            imagePath: uploadedImage.path,
-            resumePath: uploadedFile.path,
-            uploadedAt: new Date().toISOString(),
-        };
-
-        console.log("Saved resume data:", savedResumeData);
-
-        setStatus({
-            type: "success",
-            message: "Resume uploaded successfully.",
-        });
-
-        const uuid = generateUUID();
-        const data = {
-            id: uuid,
-            resumePath: uploadedFile.path,
-            imagePath: uploadedImage.path,
-            companyName,
-            jobTitle,
-            jobDescription,
-            feedback: "",
-        };
-
-        await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-        setStatusText("Analyzing...");
-
-        const feedback = await aiFeedback(
-            uploadedFile.path,
-            prepareInstructions({
+            const uuid = generateUUID();
+            const data: {
+                id: string;
+                resumePath: string;
+                imagePath: string | null;
+                companyName: string;
+                jobTitle: string;
+                jobDescription: string;
+                feedback: any;
+            } = {
+                id: uuid,
+                resumePath: uploadedFile.path,
+                imagePath: null,
+                companyName,
                 jobTitle,
                 jobDescription,
-                AIResponseFormat: "json",
-            })
-        );
+                feedback: null,
+            };
 
-        if (!feedback) {
+            await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+            setStatus({ type: "loading", message: "Analyzing resume…" });
+            setStatusText("Analyzing...");
+
+            try {
+                const feedback = await aiFeedback(
+                    uploadedFile.path,
+                    prepareInstructions({
+                        jobTitle,
+                        jobDescription,
+                        AIResponseFormat: "json",
+                    })
+                );
+
+                if (feedback) {
+                    const content = feedback.message.content;
+
+                    const feedbackText =
+                        typeof content === "string"
+                            ? content
+                            : content[0]?.type === "text"
+                                ? content[0].text
+                                : "";
+
+                    let parsedFeedback: any;
+
+                    try {
+                        parsedFeedback = JSON.parse(feedbackText);
+                    } catch (error) {
+                        console.error("JSON parse error:", error);
+                        parsedFeedback = {
+                            raw: feedbackText.slice(0, 5000),
+                        };
+                    }
+
+                    const stringifiedFeedback = JSON.stringify(parsedFeedback);
+
+                    data.feedback =
+                        stringifiedFeedback.length > 200000
+                            ? {
+                                raw: stringifiedFeedback.slice(0, 200000),
+                            }
+                            : parsedFeedback;
+
+                    await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+                    setStatus({
+                        type: "success",
+                        message: "Analysis completed successfully.",
+                    });
+                    setStatusText("Analysis completed successfully, redirecting...");
+                } else {
+                    setStatus({
+                        type: "success",
+                        message: "Resume uploaded. AI feedback unavailable right now.",
+                    });
+                    setStatusText("Redirecting to resume page...");
+                }
+            } catch (aiError: any) {
+                console.error("AI feedback error:", aiError);
+
+                setStatus({
+                    type: "success",
+                    message: "Resume uploaded. AI usage limit reached, opening resume page.",
+                });
+                setStatusText("Redirecting to resume page...");
+            }
+
+            navigate(`/resume/${uuid}`);
+        } catch (error: any) {
+            console.error("Analyze error:", error);
             setStatus({
                 type: "error",
-                message: "Failed to analyze the resume",
+                message: error?.message || "Storage limit reached",
             });
+        } finally {
             setIsProcessing(false);
-            return;
         }
-
-        const content = feedback.message.content;
-
-        const feedbackText =
-            typeof content === "string"
-                ? content
-                : content[0]?.type === "text"
-                    ? content[0].text
-                    : "";
-
-
-        data.feedback=JSON.parse(feedbackText);
-        await window.puter.kv.set(`resume:${uuid}`, JSON.stringify(data));
-        setStatusText("Analyzes completed successfully,Redirecting...");
-
-        setIsProcessing(false);
-
-        setIsProcessing(false);
     };
-
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
         e.preventDefault();
 
@@ -448,6 +453,24 @@ const Upload = (): React.JSX.Element => {
                                 onFileSelect={handleFileSelect}
                             />
                         </div>
+
+                        <button
+                            type="button"
+                            onClick={handleClearStorage}
+                            style={{
+                                width: "100%",
+                                borderRadius: "999px",
+                                background: "#ef4444",
+                                border: "none",
+                                padding: "14px 24px",
+                                fontSize: "14px",
+                                fontWeight: 600,
+                                color: "#fff",
+                                cursor: "pointer",
+                            }}
+                        >
+                            Clear Storage
+                        </button>
 
                         <button
                             type="submit"
