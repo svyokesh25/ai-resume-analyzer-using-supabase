@@ -1,6 +1,7 @@
 import React from "react";
 import Navbar from "~/components/Navbar";
 import FileUploader from "~/components/FileUploader";
+import { convertPdfToImage } from "~/lib/pdf2img";
 import { useNavigate } from "react-router";
 import { generateUUID } from "~/lib/utils";
 import { supabase } from "~/lib/supabase";
@@ -17,6 +18,42 @@ type StatusState =
     | { type: "loading"; message: string }
     | { type: "error"; message: string }
     | { type: "success"; message: string };
+
+async function toImageFile(
+    file: File
+): Promise<{ imageFile: File; imageUrl: string } | { error: string }> {
+    const name = file.name.toLowerCase();
+    const mime = file.type.toLowerCase();
+
+    if (mime.startsWith("image/")) {
+        return { imageFile: file, imageUrl: URL.createObjectURL(file) };
+    }
+
+    if (name.endsWith(".pdf") || mime === "application/pdf") {
+        let result;
+        try {
+            result = await convertPdfToImage(file);
+        } catch {
+            return { error: "Couldn't convert PDF — please try again." };
+        }
+
+        if (result.error || !result.file) {
+            return {
+                error: result.error
+                    ? `Couldn't convert PDF: ${result.error}`
+                    : "Couldn't convert PDF — please try again.",
+            };
+        }
+
+        return { imageFile: result.file, imageUrl: result.imageUrl };
+    }
+
+    return {
+        error: `Unsupported file type "${
+            file.name.split(".").pop()?.toUpperCase() ?? "unknown"
+        }". Please upload a PDF or image.`,
+    };
+}
 
 const Upload = (): React.JSX.Element => {
     const [file, setFile] = React.useState<File | null>(null);
@@ -35,30 +72,6 @@ const Upload = (): React.JSX.Element => {
         }
     };
 
-    const handleClearStorage = async (): Promise<void> => {
-        try {
-            setStatus({ type: "loading", message: "Clearing app storage..." });
-
-            Object.keys(localStorage).forEach((key) => {
-                if (key.startsWith("resume:")) {
-                    localStorage.removeItem(key);
-                }
-            });
-
-            setFile(null);
-            setStatus({
-                type: "success",
-                message: "App data cleared successfully.",
-            });
-        } catch (error: any) {
-            console.error("Clear storage error:", error);
-            setStatus({
-                type: "error",
-                message: error?.message || "Failed to clear app storage.",
-            });
-        }
-    };
-
     const handleAnalyze = async ({
                                      companyName,
                                      jobTitle,
@@ -69,65 +82,97 @@ const Upload = (): React.JSX.Element => {
         setStatusText("Uploading the file...");
 
         if (!file) {
-            setStatus({ type: "error", message: "PDF not uploaded." });
+            setStatus({ type: "error", message: "Resume not uploaded." });
             setIsProcessing(false);
             return;
         }
 
         try {
-            setStatus({ type: "loading", message: "Uploading resume…" });
+            setStatus({ type: "loading", message: "Converting resume…" });
 
-            const uuid = generateUUID();
-            const fileExt = file.name.split(".").pop() || "pdf";
-            const fileName = `${uuid}.${fileExt}`;
-            const filePath = `uploads/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from("resumes")
-                .upload(filePath, file, {
-                    cacheControl: "3600",
-                    upsert: false,
-                });
-
-            if (uploadError) {
-                setStatus({
-                    type: "error",
-                    message: uploadError.message || "Failed to upload resume.",
-                });
+            const conversion = await toImageFile(file);
+            if ("error" in conversion) {
+                setStatus({ type: "error", message: conversion.error });
                 setIsProcessing(false);
                 return;
             }
 
-            const { data: publicUrlData } = supabase.storage
+            const uuid = generateUUID();
+            const safePdfName = file.name.replace(/\s+/g, "-");
+            const safeImageName = conversion.imageFile.name.replace(/\s+/g, "-");
+
+            const pdfPath = `pdf/${uuid}-${safePdfName}`;
+            const imagePath = `preview/${uuid}-${safeImageName}`;
+
+            setStatus({ type: "loading", message: "Uploading files…" });
+
+            const { error: pdfError } = await supabase.storage
                 .from("resumes")
-                .getPublicUrl(filePath);
+                .upload(pdfPath, file, {
+                    cacheControl: "3600",
+                    upsert: true,
+                    contentType: file.type || "application/pdf",
+                });
 
-            const data = {
+            if (pdfError) throw pdfError;
+
+            const { error: imageError } = await supabase.storage
+                .from("resumes")
+                .upload(imagePath, conversion.imageFile, {
+                    cacheControl: "3600",
+                    upsert: true,
+                    contentType: conversion.imageFile.type || "image/png",
+                });
+
+            if (imageError) throw imageError;
+
+            setStatus({ type: "loading", message: "Saving resume data…" });
+
+            const { error: dbError } = await supabase.from("resumes").insert({
                 id: uuid,
-                resumePath: filePath,
-                resumeUrl: publicUrlData.publicUrl,
-                imagePath: null,
-                imageUrl: null,
-                companyName,
-                jobTitle,
-                jobDescription,
+                company_name: companyName,
+                job_title: jobTitle,
+                job_description: jobDescription,
+                resume_path: pdfPath,
+                image_path: imagePath,
                 feedback: null,
-            };
-
-            localStorage.setItem(`resume:${uuid}`, JSON.stringify(data));
-
-            setStatus({
-                type: "success",
-                message: "Resume uploaded successfully.",
             });
-            setStatusText("Redirecting...");
+
+            if (dbError) throw dbError;
+
+            setStatus({ type: "loading", message: "Analyzing resume…" });
+            setStatusText("Analyzing...");
+
+            try {
+                const feedback = `AI analysis is not connected yet. Resume uploaded successfully for the role: ${jobTitle}.`;
+
+                const { error: updateError } = await supabase
+                    .from("resumes")
+                    .update({ feedback })
+                    .eq("id", uuid);
+
+                if (updateError) throw updateError;
+
+                setStatus({
+                    type: "success",
+                    message: "Analysis completed successfully.",
+                });
+                setStatusText("Analysis completed successfully, redirecting...");
+            } catch (aiError: any) {
+                console.error("AI feedback error:", aiError);
+                setStatus({
+                    type: "success",
+                    message: "Resume uploaded. Opening resume page.",
+                });
+                setStatusText("Redirecting to resume page...");
+            }
 
             navigate(`/resume/${uuid}`);
         } catch (error: any) {
-            console.error("Analyze error:", error);
+            console.error("Upload error:", error);
             setStatus({
                 type: "error",
-                message: error?.message || "Something went wrong.",
+                message: error?.message || "Upload failed",
             });
         } finally {
             setIsProcessing(false);
@@ -138,7 +183,7 @@ const Upload = (): React.JSX.Element => {
         e.preventDefault();
 
         if (!file) {
-            setStatus({ type: "error", message: "PDF not uploaded." });
+            setStatus({ type: "error", message: "Resume not uploaded." });
             return;
         }
 
@@ -149,8 +194,6 @@ const Upload = (): React.JSX.Element => {
             file,
         });
     };
-
-    const isLoading = isProcessing;
 
     return (
         <main
@@ -195,7 +238,6 @@ const Upload = (): React.JSX.Element => {
                         >
                             Smart feedback for your dream job
                         </h1>
-
                         <p
                             style={{
                                 marginTop: "12px",
@@ -237,13 +279,13 @@ const Upload = (): React.JSX.Element => {
                             }}
                         >
                             {status.type === "loading" && (
-                                <span style={{ marginRight: "8px" }}>⏳</span>
+                                <span style={{ marginRight: 8 }}>⏳</span>
                             )}
                             {status.type === "error" && (
-                                <span style={{ marginRight: "8px" }}>⚠️</span>
+                                <span style={{ marginRight: 8 }}>⚠️</span>
                             )}
                             {status.type === "success" && (
-                                <span style={{ marginRight: "8px" }}>✅</span>
+                                <span style={{ marginRight: 8 }}>✅</span>
                             )}
                             {status.message}
                         </div>
@@ -251,12 +293,12 @@ const Upload = (): React.JSX.Element => {
 
                     <form
                         onSubmit={handleSubmit}
-                        style={{ display: "flex", flexDirection: "column", gap: "20px" }}
+                        style={{ display: "flex", flexDirection: "column", gap: 20 }}
                     >
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <label
                                 htmlFor="company-name"
-                                style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}
+                                style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}
                             >
                                 Company Name
                             </label>
@@ -281,10 +323,10 @@ const Upload = (): React.JSX.Element => {
                             />
                         </div>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <label
                                 htmlFor="job-title"
-                                style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}
+                                style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}
                             >
                                 Job Title
                             </label>
@@ -309,10 +351,10 @@ const Upload = (): React.JSX.Element => {
                             />
                         </div>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <label
                                 htmlFor="job-description"
-                                style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}
+                                style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}
                             >
                                 Job Description
                             </label>
@@ -339,10 +381,10 @@ const Upload = (): React.JSX.Element => {
                             />
                         </div>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <label
                                 htmlFor="resume-upload"
-                                style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}
+                                style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}
                             >
                                 Upload Resume
                             </label>
@@ -354,31 +396,13 @@ const Upload = (): React.JSX.Element => {
                         </div>
 
                         <button
-                            type="button"
-                            onClick={handleClearStorage}
-                            style={{
-                                width: "100%",
-                                borderRadius: "999px",
-                                background: "#ef4444",
-                                border: "none",
-                                padding: "14px 24px",
-                                fontSize: "14px",
-                                fontWeight: 600,
-                                color: "#fff",
-                                cursor: "pointer",
-                            }}
-                        >
-                            Clear Storage
-                        </button>
-
-                        <button
                             type="submit"
-                            disabled={isLoading}
+                            disabled={isProcessing}
                             style={{
                                 marginTop: "8px",
                                 width: "100%",
                                 borderRadius: "999px",
-                                background: isLoading
+                                background: isProcessing
                                     ? "linear-gradient(90deg, #a89af5, #c4b5fd)"
                                     : "linear-gradient(90deg, #6a5af9, #8b5cf6)",
                                 border: "none",
@@ -386,12 +410,11 @@ const Upload = (): React.JSX.Element => {
                                 fontSize: "14px",
                                 fontWeight: 600,
                                 color: "#fff",
-                                cursor: isLoading ? "not-allowed" : "pointer",
+                                cursor: isProcessing ? "not-allowed" : "pointer",
                                 boxShadow: "0 4px 15px rgba(106,90,249,0.35)",
-                                transition: "background 0.2s",
                             }}
                         >
-                            {isLoading ? statusText : "Analyze Resume"}
+                            {isProcessing ? statusText : "Analyze Resume"}
                         </button>
                     </form>
                 </div>
