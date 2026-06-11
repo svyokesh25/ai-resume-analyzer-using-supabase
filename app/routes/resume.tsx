@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "~/lib/supabase";
+import Summary from "~/components/Summary";
 
 export const meta = () => [
     { title: "Resumind | Review" },
@@ -12,6 +13,7 @@ type FeedbackData = {
     ats?: string;
     details?: string;
     raw?: string;
+    overallScore?: number;
 };
 
 const cardStyle: React.CSSProperties = {
@@ -63,24 +65,28 @@ const Resume = () => {
                     summary: data.feedback,
                     ats: "ATS score not available yet.",
                     details: "Detailed suggestions are not available yet.",
+                    overallScore: 72,
                 });
             } else if (data.feedback?.summary || data.feedback?.ats || data.feedback?.details) {
                 setFeedback({
                     summary: data.feedback.summary || "No summary available yet.",
                     ats: data.feedback.ats || "ATS score not available yet.",
                     details: data.feedback.details || "Detailed suggestions are not available yet.",
+                    overallScore: data.feedback.overallScore || 72,
                 });
             } else if (data.feedback?.raw) {
                 setFeedback({
                     summary: data.feedback.raw,
                     ats: "ATS score not available yet.",
                     details: "Detailed suggestions are not available yet.",
+                    overallScore: 72,
                 });
             } else {
                 setFeedback({
                     summary: "No feedback available yet.",
                     ats: "ATS score not available yet.",
                     details: "Detailed suggestions are not available yet.",
+                    overallScore: 72,
                 });
             }
         };
@@ -90,7 +96,6 @@ const Resume = () => {
 
     const sections = useMemo(
         () => [
-            { title: "Summary", content: feedback?.summary || "No summary available yet." },
             { title: "ATS", content: feedback?.ats || "ATS score not available yet." },
             { title: "Details", content: feedback?.details || "Detailed suggestions are not available yet." },
         ],
@@ -246,6 +251,8 @@ const Resume = () => {
                             gap: "18px",
                         }}
                     >
+                        {feedback && <Summary feedback={feedback as Feedback} />}
+
                         {sections.map((section) => (
                             <div
                                 key={section.title}
