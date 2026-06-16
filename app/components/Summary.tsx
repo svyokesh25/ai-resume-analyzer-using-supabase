@@ -1,6 +1,5 @@
 import ScoreGauge from "~/components/ScoreGauge";
 import ScoreBadge from "~/components/ScoreBadge";
-import type { Feedback } from "~/components/Details";
 
 const Category = ({ title, score }: { title: string; score: number }) => {
     const textColor =
@@ -24,12 +23,23 @@ const Category = ({ title, score }: { title: string; score: number }) => {
     );
 };
 
+type Feedback = {
+    overallScore: number;
+    summary: string;
+    atsScore: number;
+    atsTips: { type: "good" | "warning"; tip: string }[];
+    toneAndStyle: { score: number };
+    content: { score: number };
+    structure: { score: number };
+    skills: { score: number };
+};
+
 const Summary = ({ feedback }: { feedback: Feedback }) => {
-    const overallScore = feedback?.overallScore ?? 72;
-    const toneAndStyleScore = feedback?.toneAndStyle?.score ?? 70;
-    const contentScore = feedback?.content?.score ?? 65;
-    const structureScore = feedback?.structure?.score ?? 80;
-    const skillsScore = feedback?.skills?.score ?? 70;
+    const overallScore = feedback?.overallScore ?? 0;
+    const toneAndStyleScore = feedback?.toneAndStyle?.score ?? 0;
+    const contentScore = feedback?.content?.score ?? 0;
+    const structureScore = feedback?.structure?.score ?? 0;
+    const skillsScore = feedback?.skills?.score ?? 0;
 
     return (
         <div className="w-full rounded-2xl bg-white p-6 shadow-md border border-gray-200">

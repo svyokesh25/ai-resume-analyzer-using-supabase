@@ -2,6 +2,7 @@ import React from "react";
 import Navbar from "~/components/Navbar";
 import FileUploader from "~/components/FileUploader";
 import { convertPdfToImage } from "~/lib/pdf2img";
+import { extractPdfText } from "~/lib/pdfTextExtractor";
 import { useNavigate } from "react-router";
 import { generateUUID } from "~/lib/utils";
 import { supabase } from "~/lib/supabase";
@@ -55,6 +56,30 @@ async function toImageFile(
     };
 }
 
+async function readResumeText(file: File): Promise<string> {
+    const name = file.name.toLowerCase();
+    const mime = file.type.toLowerCase();
+
+    // For PDFs, extract text properly using pdfjs
+    if (name.endsWith(".pdf") || mime === "application/pdf") {
+        return await extractPdfText(file);
+    }
+
+    // For images, we can't extract text easily without OCR
+    if (mime.startsWith("image/")) {
+        console.warn("Image file detected. Text extraction not available. Consider uploading a PDF.");
+        return "";
+    }
+
+    // For text files, try to read directly
+    try {
+        return await file.text();
+    } catch {
+        console.error("Failed to read file as text");
+        return "";
+    }
+}
+
 const Upload = (): React.JSX.Element => {
     const [file, setFile] = React.useState<File | null>(null);
     const navigate = useNavigate();
@@ -83,6 +108,12 @@ const Upload = (): React.JSX.Element => {
 
         if (!file) {
             setStatus({ type: "error", message: "Resume not uploaded." });
+            setIsProcessing(false);
+            return;
+        }
+
+        if (!jobDescription.trim()) {
+            setStatus({ type: "error", message: "Please paste a job description." });
             setIsProcessing(false);
             return;
         }
@@ -126,6 +157,19 @@ const Upload = (): React.JSX.Element => {
 
             if (imageError) throw imageError;
 
+            setStatus({ type: "loading", message: "Extracting resume text…" });
+
+            const resumeText = await readResumeText(file);
+
+            if (!resumeText.trim()) {
+                setStatus({
+                    type: "error",
+                    message: "Could not extract text from resume. Please ensure the PDF is not image-based or try a different file.",
+                });
+                setIsProcessing(false);
+                return;
+            }
+
             setStatus({ type: "loading", message: "Saving resume data…" });
 
             const { error: dbError } = await supabase.from("resumes").insert({
@@ -140,39 +184,41 @@ const Upload = (): React.JSX.Element => {
 
             if (dbError) throw dbError;
 
-            setStatus({ type: "loading", message: "Analyzing resume…" });
-            setStatusText("Analyzing...");
+            setStatus({ type: "loading", message: "Analyzing with AI…" });
+            setStatusText("Analyzing with AI...");
 
-            try {
-                const feedback = `AI analysis is not connected yet. Resume uploaded successfully for the role: ${jobTitle}.`;
+            const { data: aiFeedback, error: aiError } = await supabase.functions.invoke(
+                "analyze-resume",
+                {
+                    body: {
+                        resumeText,
+                        jobTitle,
+                        jobDescription,
+                    },
+                }
+            );
 
-                const { error: updateError } = await supabase
-                    .from("resumes")
-                    .update({ feedback })
-                    .eq("id", uuid);
+            if (aiError) throw aiError;
 
-                if (updateError) throw updateError;
+            const { error: updateError } = await supabase
+                .from("resumes")
+                .update({ feedback: aiFeedback })
+                .eq("id", uuid);
 
-                setStatus({
-                    type: "success",
-                    message: "Analysis completed successfully.",
-                });
-                setStatusText("Analysis completed successfully, redirecting...");
-            } catch (aiError: any) {
-                console.error("AI feedback error:", aiError);
-                setStatus({
-                    type: "success",
-                    message: "Resume uploaded. Opening resume page.",
-                });
-                setStatusText("Redirecting to resume page...");
-            }
+            if (updateError) throw updateError;
+
+            setStatus({
+                type: "success",
+                message: "Analysis completed successfully.",
+            });
+            setStatusText("Analysis completed successfully, redirecting...");
 
             navigate(`/resume/${uuid}`);
         } catch (error: any) {
             console.error("Upload error:", error);
             setStatus({
                 type: "error",
-                message: error?.message || "Upload failed",
+                message: error?.message || "Upload failed. Please try again.",
             });
         } finally {
             setIsProcessing(false);

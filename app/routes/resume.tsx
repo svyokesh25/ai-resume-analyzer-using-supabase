@@ -3,12 +3,40 @@ import { useEffect, useState } from "react";
 import { supabase } from "~/lib/supabase";
 import Summary from "~/components/Summary";
 import ATS from "~/components/Ats";
-import Details, { type Feedback } from "~/components/Details";
 
 export const meta = () => [
     { title: "Resumind | Review" },
     { name: "description", content: "Detailed overview of your resume" },
 ];
+
+type DetailedTip = {
+    type: "good" | "improve";
+    tip: string;
+    explanation: string;
+};
+
+type FeedbackData = {
+    overallScore: number;
+    summary: string;
+    atsScore: number;
+    atsTips: { type: "good" | "warning"; tip: string }[];
+    toneAndStyle: {
+        score: number;
+        tips: DetailedTip[];
+    };
+    content: {
+        score: number;
+        tips: DetailedTip[];
+    };
+    structure: {
+        score: number;
+        tips: DetailedTip[];
+    };
+    skills: {
+        score: number;
+        tips: DetailedTip[];
+    };
+};
 
 const cardStyle: React.CSSProperties = {
     background: "#ffffff",
@@ -17,127 +45,12 @@ const cardStyle: React.CSSProperties = {
     boxShadow: "0 8px 24px rgba(0,0,0,0.05)",
 };
 
-const fallbackFeedback: Feedback = {
-    overallScore: 72,
-    summary:
-        "Your resume shows a strong base, but there is room to improve clarity, keyword matching, and structure for better recruiter and ATS performance.",
-    atsScore: 68,
-    atsTips: [
-        { type: "good", tip: "Resume includes role-specific experience." },
-        { type: "warning", tip: "Add more keywords from the job description." },
-        { type: "warning", tip: "Use clearer section headings for ATS parsing." },
-    ],
-    toneAndStyle: {
-        score: 70,
-        tips: [
-            {
-                type: "good",
-                tip: "Professional tone",
-                explanation: "The writing style is professional and suitable for recruiters.",
-            },
-            {
-                type: "improve",
-                tip: "Reduce vague phrases",
-                explanation: "Replace generic wording with specific measurable impact.",
-            },
-        ],
-    },
-    content: {
-        score: 65,
-        tips: [
-            {
-                type: "good",
-                tip: "Relevant experience included",
-                explanation: "Your work history appears related to the target role.",
-            },
-            {
-                type: "improve",
-                tip: "Add quantified achievements",
-                explanation: "Use numbers and outcomes to make accomplishments more convincing.",
-            },
-        ],
-    },
-    structure: {
-        score: 80,
-        tips: [
-            {
-                type: "good",
-                tip: "Clear section flow",
-                explanation: "The resume is organized in a readable order.",
-            },
-            {
-                type: "improve",
-                tip: "Improve spacing consistency",
-                explanation: "Better spacing can make the document easier to scan quickly.",
-            },
-        ],
-    },
-    skills: {
-        score: 70,
-        tips: [
-            {
-                type: "good",
-                tip: "Core skills are present",
-                explanation: "You list several relevant technical and professional skills.",
-            },
-            {
-                type: "improve",
-                tip: "Match job keywords",
-                explanation: "Add exact skill phrases from the job description when truthful.",
-            },
-        ],
-    },
-};
-
-function normalizeFeedback(rawFeedback: any): Feedback {
-    if (!rawFeedback) return fallbackFeedback;
-
-    if (typeof rawFeedback === "string") {
-        return {
-            ...fallbackFeedback,
-            summary: rawFeedback,
-        };
-    }
-
-    return {
-        overallScore: rawFeedback.overallScore ?? fallbackFeedback.overallScore,
-        summary: rawFeedback.summary ?? rawFeedback.raw ?? fallbackFeedback.summary,
-        atsScore: rawFeedback.atsScore ?? fallbackFeedback.atsScore,
-        atsTips: Array.isArray(rawFeedback.atsTips)
-            ? rawFeedback.atsTips
-            : fallbackFeedback.atsTips,
-        toneAndStyle: {
-            score: rawFeedback.toneAndStyle?.score ?? fallbackFeedback.toneAndStyle.score,
-            tips: Array.isArray(rawFeedback.toneAndStyle?.tips)
-                ? rawFeedback.toneAndStyle.tips
-                : fallbackFeedback.toneAndStyle.tips,
-        },
-        content: {
-            score: rawFeedback.content?.score ?? fallbackFeedback.content.score,
-            tips: Array.isArray(rawFeedback.content?.tips)
-                ? rawFeedback.content.tips
-                : fallbackFeedback.content.tips,
-        },
-        structure: {
-            score: rawFeedback.structure?.score ?? fallbackFeedback.structure.score,
-            tips: Array.isArray(rawFeedback.structure?.tips)
-                ? rawFeedback.structure.tips
-                : fallbackFeedback.structure.tips,
-        },
-        skills: {
-            score: rawFeedback.skills?.score ?? fallbackFeedback.skills.score,
-            tips: Array.isArray(rawFeedback.skills?.tips)
-                ? rawFeedback.skills.tips
-                : fallbackFeedback.skills.tips,
-        },
-    };
-}
-
 const Resume = () => {
     const { id } = useParams();
     const [imageUrl, setImageUrl] = useState("");
     const [resumeUrl, setResumeUrl] = useState("");
-    const [feedback, setFeedback] = useState<Feedback>(fallbackFeedback);
+    const [feedback, setFeedback] = useState<FeedbackData | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const loadResume = async () => {
@@ -151,7 +64,7 @@ const Resume = () => {
 
             if (error || !data) {
                 console.error("Failed to load resume:", error);
-                setFeedback(fallbackFeedback);
+                setLoading(false);
                 return;
             }
 
@@ -171,11 +84,82 @@ const Resume = () => {
                 setImageUrl(imagePublic.publicUrl);
             }
 
-            setFeedback(normalizeFeedback(data.feedback));
+            if (data.feedback && typeof data.feedback === "object") {
+                setFeedback(data.feedback as FeedbackData);
+            } else {
+                setFeedback(null);
+            }
+
+            setLoading(false);
         };
 
         loadResume();
     }, [id]);
+
+    const renderTipSection = (title: string, tips: DetailedTip[] = []) => (
+        <div
+            style={{
+                ...cardStyle,
+                padding: "20px",
+            }}
+        >
+            <h3
+                style={{
+                    margin: 0,
+                    marginBottom: "12px",
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: "#111827",
+                }}
+            >
+                {title}
+            </h3>
+
+            {tips.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {tips.map((tip, index) => (
+                        <div key={`${title}-${index}`}>
+                            <p
+                                style={{
+                                    margin: 0,
+                                    fontSize: "14px",
+                                    fontWeight: 700,
+                                    color:
+                                        tip.type === "good" ? "#15803d" : "#b45309",
+                                }}
+                            >
+                                {tip.tip}
+                            </p>
+                            <p
+                                style={{
+                                    margin: 0,
+                                    marginTop: "6px",
+                                    whiteSpace: "pre-wrap",
+                                    wordBreak: "break-word",
+                                    fontSize: "14px",
+                                    color: "#4b5563",
+                                    lineHeight: 1.7,
+                                }}
+                            >
+                                {tip.explanation}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p
+                    style={{
+                        margin: 0,
+                        fontSize: "14px",
+                        color: "#6b7280",
+                        lineHeight: 1.7,
+                    }}
+                >
+                    No detailed feedback available yet.
+                </p>
+            )}
+        </div>
+    );
 
     return (
         <main
@@ -206,7 +190,9 @@ const Resume = () => {
                     }}
                 >
                     <img src="/icons/back.svg" alt="back" className="w-2.5 h-2.5" />
-                    <span className="text-gray-800 text-sm font-semibold">Back to Homepage</span>
+                    <span className="text-gray-800 text-sm font-semibold">
+                        Back to Homepage
+                    </span>
                 </Link>
             </nav>
 
@@ -326,37 +312,78 @@ const Resume = () => {
                             gap: "18px",
                         }}
                     >
-                        <Summary feedback={feedback} />
+                        {loading ? (
+                            <div style={{ ...cardStyle, padding: "20px" }}>
+                                <p style={{ margin: 0, color: "#6b7280" }}>
+                                    Loading feedback...
+                                </p>
+                            </div>
+                        ) : feedback ? (
+                            <>
+                                <Summary feedback={feedback} />
 
-                        <div style={{ ...cardStyle, padding: "20px" }}>
-                            <h3
-                                style={{
-                                    margin: 0,
-                                    marginBottom: "12px",
-                                    fontSize: "15px",
-                                    fontWeight: 700,
-                                    color: "#111827",
-                                }}
-                            >
-                                Summary
-                            </h3>
-                            <p
-                                style={{
-                                    margin: 0,
-                                    whiteSpace: "pre-wrap",
-                                    wordBreak: "break-word",
-                                    fontSize: "14px",
-                                    color: "#4b5563",
-                                    lineHeight: 1.7,
-                                }}
-                            >
-                                {feedback.summary}
-                            </p>
-                        </div>
+                                <div style={{ ...cardStyle, padding: "20px" }}>
+                                    <h3
+                                        style={{
+                                            margin: 0,
+                                            marginBottom: "12px",
+                                            fontSize: "15px",
+                                            fontWeight: 700,
+                                            color: "#111827",
+                                        }}
+                                    >
+                                        Summary
+                                    </h3>
+                                    <p
+                                        style={{
+                                            margin: 0,
+                                            whiteSpace: "pre-wrap",
+                                            wordBreak: "break-word",
+                                            fontSize: "14px",
+                                            color: "#4b5563",
+                                            lineHeight: 1.7,
+                                        }}
+                                    >
+                                        {feedback.summary}
+                                    </p>
+                                </div>
 
-                        <ATS score={feedback.atsScore} suggestions={feedback.atsTips} />
+                                <ATS
+                                    score={feedback.atsScore}
+                                    suggestions={feedback.atsTips}
+                                />
 
-                        <Details feedback={feedback} />
+                                {renderTipSection(
+                                    "Tone & Style Feedback",
+                                    feedback.toneAndStyle?.tips
+                                )}
+                                {renderTipSection(
+                                    "Content Feedback",
+                                    feedback.content?.tips
+                                )}
+                                {renderTipSection(
+                                    "Structure Feedback",
+                                    feedback.structure?.tips
+                                )}
+                                {renderTipSection(
+                                    "Skills Feedback",
+                                    feedback.skills?.tips
+                                )}
+                            </>
+                        ) : (
+                            <div style={{ ...cardStyle, padding: "20px" }}>
+                                <p
+                                    style={{
+                                        margin: 0,
+                                        fontSize: "14px",
+                                        color: "#6b7280",
+                                        lineHeight: 1.7,
+                                    }}
+                                >
+                                    No feedback available yet.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </section>
             </div>

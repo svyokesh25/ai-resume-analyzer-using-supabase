@@ -1,3 +1,4 @@
+// @ts-nocheck
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 interface ResumeRequest {
@@ -33,7 +34,6 @@ interface ResumeFeedback {
     skills: FeedbackCategory;
 }
 
-// @ts-ignore
 Deno.serve(async (req: Request): Promise<Response> => {
     try {
         const { resumeText, jobTitle, jobDescription } = (await req.json()) as ResumeRequest;
@@ -50,7 +50,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
             );
         }
 
-        // @ts-ignore
         const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
         if (!OPENAI_API_KEY) {
@@ -148,8 +147,7 @@ ${resumeText}
                 messages: [
                     {
                         role: "system",
-                        content:
-                            "You are a strict resume analysis assistant. Return only valid JSON.",
+                        content: "You are a strict resume analysis assistant. Return only valid JSON.",
                     },
                     {
                         role: "user",
@@ -170,7 +168,6 @@ ${resumeText}
 
         const content = data.choices?.[0]?.message?.content as string;
 
-        // Parse and validate the JSON response
         let parsedFeedback: ResumeFeedback;
         try {
             parsedFeedback = JSON.parse(content);

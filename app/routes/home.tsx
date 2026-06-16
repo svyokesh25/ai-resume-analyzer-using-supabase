@@ -5,6 +5,16 @@ import Navbar from "~/components/Navbar";
 import Resumecard from "~/components/Resumecard";
 import { supabase } from "~/lib/supabase";
 
+type ResumeRow = {
+    id: string;
+    company_name: string;
+    job_title: string;
+    image_path: string | null;
+    feedback: {
+        overallScore?: number;
+    } | null;
+};
+
 type ResumeCardData = {
     id: string;
     companyName: string;
@@ -25,39 +35,45 @@ export function meta({}: Route.MetaArgs) {
 export default function Home() {
     const navigate = useNavigate();
     const [resumes, setResumes] = useState<ResumeCardData[]>([]);
-    const [loadingResumes, setLoadingResumes] = useState(true);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const loadResumes = async () => {
-            setLoadingResumes(true);
-
             const { data, error } = await supabase
                 .from("resumes")
-                .select("*")
+                .select("id, company_name, job_title, image_path, feedback")
                 .order("created_at", { ascending: false });
 
             if (error) {
                 console.error("Failed to load resumes:", error);
-                setResumes([]);
-                setLoadingResumes(false);
+                setLoading(false);
                 return;
             }
 
-            const parsedResumes: ResumeCardData[] = (data || []).map((item: any) => ({
-                id: item.id,
-                companyName: item.company_name,
-                jobTitle: item.job_title,
-                imagePath: item.image_path,
-                feedback:
-                    typeof item.feedback === "object" &&
-                    item.feedback !== null &&
-                    typeof item.feedback.overallScore === "number"
-                        ? { overallScore: item.feedback.overallScore }
-                        : { overallScore: 72 },
-            }));
+            const mapped = (data as ResumeRow[]).map((resume) => {
+                let publicImageUrl = "";
 
-            setResumes(parsedResumes);
-            setLoadingResumes(false);
+                if (resume.image_path) {
+                    const { data: imagePublic } = supabase.storage
+                        .from("resumes")
+                        .getPublicUrl(resume.image_path);
+
+                    publicImageUrl = imagePublic.publicUrl;
+                }
+
+                return {
+                    id: resume.id,
+                    companyName: resume.company_name,
+                    jobTitle: resume.job_title,
+                    imagePath: publicImageUrl,
+                    feedback: {
+                        overallScore: resume.feedback?.overallScore ?? 0,
+                    },
+                };
+            });
+
+            setResumes(mapped);
+            setLoading(false);
         };
 
         loadResumes();
@@ -83,10 +99,8 @@ export default function Home() {
                     </button>
                 </div>
 
-                {loadingResumes ? (
-                    <div className="flex justify-center py-10 text-gray-600">
-                        Loading resumes...
-                    </div>
+                {loading ? (
+                    <p className="text-center text-gray-600">Loading resumes...</p>
                 ) : resumes.length > 0 ? (
                     <div className="resume-grid">
                         {resumes.map((resume) => (
@@ -94,9 +108,9 @@ export default function Home() {
                         ))}
                     </div>
                 ) : (
-                    <div className="flex justify-center py-10 text-gray-600">
+                    <p className="text-center text-gray-600">
                         No resumes uploaded yet.
-                    </div>
+                    </p>
                 )}
             </section>
         </main>

@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "jsr:": "https://jsr.io/"
+  },
+  "tasks": {
+    "test": "deno test --allow-all"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window"]
+  }
+}
